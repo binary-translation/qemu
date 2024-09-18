@@ -241,6 +241,9 @@ TCGContext **tcg_ctxs;
 unsigned int tcg_cur_ctxs;
 unsigned int tcg_max_ctxs;
 TCGv_env tcg_env;
+#ifdef TCG_TARGET_THREAD_TAG_ID
+TCGv_i64 thread_tag_id;
+#endif
 const void *tcg_code_gen_epilogue;
 uintptr_t tcg_splitwx_diff;
 

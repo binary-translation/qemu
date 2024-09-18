@@ -580,6 +580,9 @@ extern __thread TCGContext *tcg_ctx;
 extern const void *tcg_code_gen_epilogue;
 extern uintptr_t tcg_splitwx_diff;
 extern TCGv_env tcg_env;
+#ifdef TCG_TARGET_THREAD_TAG_ID
+extern TCGv_i64 thread_tag_id;
+#endif
 
 bool in_code_gen_buffer(const void *p);
 

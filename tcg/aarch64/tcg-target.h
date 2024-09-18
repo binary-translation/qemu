@@ -170,4 +170,8 @@ typedef enum {
 #define TCG_TARGET_NEED_LDST_LABELS
 #define TCG_TARGET_NEED_POOL_LABELS
 
+#ifdef CONFIG_USER_ONLY
+#define TCG_TARGET_THREAD_TAG_ID
+#endif
+
 #endif /* AARCH64_TCG_TARGET_H */

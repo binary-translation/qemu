@@ -350,6 +350,7 @@ typedef union IcountDecr {
  */
 typedef struct CPUNegativeOffsetState {
     CPUTLB tlb;
+    uint64_t thread_tag_id;
     IcountDecr icount_decr;
     bool can_do_io;
 } CPUNegativeOffsetState;

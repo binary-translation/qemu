@@ -26,6 +26,7 @@
 #include "disas/disas.h"
 #include "exec/exec-all.h"
 #include "tcg/tcg.h"
+#include "tcg/tcg-op-common.h"
 #include "qemu/atomic.h"
 #include "qemu/rcu.h"
 #include "exec/log.h"
@@ -1097,6 +1098,13 @@ bool tcg_exec_realizefn(CPUState *cpu, Error **errp)
     if (!tcg_target_initialized) {
         cc->tcg_ops->initialize();
         tcg_target_initialized = true;
+#ifdef TCG_TARGET_THREAD_TAG_ID
+        if (tcg_ctx->enable_pointer_tagging)
+        {
+            thread_tag_id = tcg_global_mem_new_i64(tcg_env, offsetof(ArchCPU, parent_obj.neg.thread_tag_id) -
+                offsetof(ArchCPU, env), "thread_tag_id");
+        }
+#endif
     }
 
     cpu->tb_jmp_cache = g_new0(CPUJumpCache, 1);
