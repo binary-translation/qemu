@@ -32,6 +32,22 @@
 #include "tcg-internal.h"
 
 
+#ifdef TCG_TARGET_THREAD_TAG_ID
+#define POINTER_TAG_INSERT(tcg_ctx, addr)                               \
+    do {                                                                \
+        if ((tcg_ctx)->enable_pointer_tagging)                          \
+            {                                                           \
+                TCGv_i64 t = tcg_temp_ebb_new_i64();                    \
+                tcg_gen_deposit_i64(t, temp_tcgv_i64((addr)),           \
+                        thread_tag_id, 56, 4);                          \
+                (addr) = tcgv_i64_temp(t);                              \
+            }                                                           \
+    } while(0)
+#else
+#define POINTER_TAG_INSERT(tcg_ctx, addr) do { } while (0)
+#endif
+
+
 static void check_max_alignment(unsigned a_bits)
 {
     /*
@@ -226,6 +242,7 @@ void tcg_gen_qemu_ld_i32_chk(TCGv_i32 val, TCGTemp *addr, TCGArg idx,
 {
     tcg_debug_assert(addr_type == tcg_ctx->addr_type);
     tcg_debug_assert((memop & MO_SIZE) <= MO_32);
+    POINTER_TAG_INSERT(tcg_ctx, addr);
     tcg_gen_qemu_ld_i32_int(val, addr, idx, memop);
 }
 
@@ -283,6 +300,7 @@ void tcg_gen_qemu_st_i32_chk(TCGv_i32 val, TCGTemp *addr, TCGArg idx,
 {
     tcg_debug_assert(addr_type == tcg_ctx->addr_type);
     tcg_debug_assert((memop & MO_SIZE) <= MO_32);
+    POINTER_TAG_INSERT(tcg_ctx, addr);
     tcg_gen_qemu_st_i32_int(val, addr, idx, memop);
 }
 
@@ -351,6 +369,7 @@ void tcg_gen_qemu_ld_i64_chk(TCGv_i64 val, TCGTemp *addr, TCGArg idx,
 {
     tcg_debug_assert(addr_type == tcg_ctx->addr_type);
     tcg_debug_assert((memop & MO_SIZE) <= MO_64);
+    POINTER_TAG_INSERT(tcg_ctx, addr);
     tcg_gen_qemu_ld_i64_int(val, addr, idx, memop);
 }
 
@@ -408,6 +427,7 @@ void tcg_gen_qemu_st_i64_chk(TCGv_i64 val, TCGTemp *addr, TCGArg idx,
 {
     tcg_debug_assert(addr_type == tcg_ctx->addr_type);
     tcg_debug_assert((memop & MO_SIZE) <= MO_64);
+    POINTER_TAG_INSERT(tcg_ctx, addr);
     tcg_gen_qemu_st_i64_int(val, addr, idx, memop);
 }
 
@@ -615,6 +635,7 @@ void tcg_gen_qemu_ld_i128_chk(TCGv_i128 val, TCGTemp *addr, TCGArg idx,
     tcg_debug_assert(addr_type == tcg_ctx->addr_type);
     tcg_debug_assert((memop & MO_SIZE) == MO_128);
     tcg_debug_assert((memop & MO_SIGN) == 0);
+    POINTER_TAG_INSERT(tcg_ctx, addr);
     tcg_gen_qemu_ld_i128_int(val, addr, idx, memop);
 }
 
@@ -731,6 +752,7 @@ void tcg_gen_qemu_st_i128_chk(TCGv_i128 val, TCGTemp *addr, TCGArg idx,
     tcg_debug_assert(addr_type == tcg_ctx->addr_type);
     tcg_debug_assert((memop & MO_SIZE) == MO_128);
     tcg_debug_assert((memop & MO_SIGN) == 0);
+    POINTER_TAG_INSERT(tcg_ctx, addr);
     tcg_gen_qemu_st_i128_int(val, addr, idx, memop);
 }
 
@@ -851,6 +873,7 @@ void tcg_gen_nonatomic_cmpxchg_i32_chk(TCGv_i32 retv, TCGTemp *addr,
 {
     tcg_debug_assert(addr_type == tcg_ctx->addr_type);
     tcg_debug_assert((memop & MO_SIZE) <= MO_32);
+    POINTER_TAG_INSERT(tcg_ctx, addr);
     tcg_gen_nonatomic_cmpxchg_i32_int(retv, addr, cmpv, newv, idx, memop);
 }
 
@@ -888,6 +911,7 @@ void tcg_gen_atomic_cmpxchg_i32_chk(TCGv_i32 retv, TCGTemp *addr,
 {
     tcg_debug_assert(addr_type == tcg_ctx->addr_type);
     tcg_debug_assert((memop & MO_SIZE) <= MO_32);
+    POINTER_TAG_INSERT(tcg_ctx, addr);
     tcg_gen_atomic_cmpxchg_i32_int(retv, addr, cmpv, newv, idx, memop);
 }
 
@@ -933,6 +957,7 @@ void tcg_gen_nonatomic_cmpxchg_i64_chk(TCGv_i64 retv, TCGTemp *addr,
 {
     tcg_debug_assert(addr_type == tcg_ctx->addr_type);
     tcg_debug_assert((memop & MO_SIZE) <= MO_64);
+    POINTER_TAG_INSERT(tcg_ctx, addr);
     tcg_gen_nonatomic_cmpxchg_i64_int(retv, addr, cmpv, newv, idx, memop);
 }
 
@@ -1004,6 +1029,7 @@ void tcg_gen_atomic_cmpxchg_i64_chk(TCGv_i64 retv, TCGTemp *addr,
 {
     tcg_debug_assert(addr_type == tcg_ctx->addr_type);
     tcg_debug_assert((memop & MO_SIZE) <= MO_64);
+    POINTER_TAG_INSERT(tcg_ctx, addr);
     tcg_gen_atomic_cmpxchg_i64_int(retv, addr, cmpv, newv, idx, memop);
 }
 
@@ -1057,6 +1083,7 @@ void tcg_gen_nonatomic_cmpxchg_i128_chk(TCGv_i128 retv, TCGTemp *addr,
 {
     tcg_debug_assert(addr_type == tcg_ctx->addr_type);
     tcg_debug_assert((memop & (MO_SIZE | MO_SIGN)) == MO_128);
+    POINTER_TAG_INSERT(tcg_ctx, addr);
     tcg_gen_nonatomic_cmpxchg_i128_int(retv, addr, cmpv, newv, idx, memop);
 }
 
@@ -1098,6 +1125,7 @@ void tcg_gen_atomic_cmpxchg_i128_chk(TCGv_i128 retv, TCGTemp *addr,
 {
     tcg_debug_assert(addr_type == tcg_ctx->addr_type);
     tcg_debug_assert((memop & (MO_SIZE | MO_SIGN)) == MO_128);
+    POINTER_TAG_INSERT(tcg_ctx, addr);
     tcg_gen_atomic_cmpxchg_i128_int(retv, addr, cmpv, newv, idx, memop);
 }
 
@@ -1214,6 +1242,7 @@ void tcg_gen_atomic_##NAME##_i32_chk(TCGv_i32 ret, TCGTemp *addr,       \
 {                                                                       \
     tcg_debug_assert(addr_type == tcg_ctx->addr_type);                  \
     tcg_debug_assert((memop & MO_SIZE) <= MO_32);                       \
+    POINTER_TAG_INSERT(tcg_ctx, addr);                                  \
     if (tcg_ctx->gen_tb->cflags & CF_PARALLEL) {                        \
         do_atomic_op_i32(ret, addr, val, idx, memop, table_##NAME);     \
     } else {                                                            \
@@ -1227,6 +1256,7 @@ void tcg_gen_atomic_##NAME##_i64_chk(TCGv_i64 ret, TCGTemp *addr,       \
 {                                                                       \
     tcg_debug_assert(addr_type == tcg_ctx->addr_type);                  \
     tcg_debug_assert((memop & MO_SIZE) <= MO_64);                       \
+    POINTER_TAG_INSERT(tcg_ctx, addr);                                  \
     if (tcg_ctx->gen_tb->cflags & CF_PARALLEL) {                        \
         do_atomic_op_i64(ret, addr, val, idx, memop, table_##NAME);     \
     } else {                                                            \
