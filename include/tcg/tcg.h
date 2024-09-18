@@ -490,6 +490,7 @@ struct TCGContext {
     uint8_t page_bits;
     uint8_t tlb_dyn_max_bits;
     uint8_t insn_start_words;
+    bool enable_pointer_tagging;
     TCGBar guest_mo;
 
     TCGRegSet reserved_regs;

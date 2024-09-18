@@ -10,6 +10,9 @@
  * See the COPYING file in the top-level directory for details.
  */
 
+#include <sys/prctl.h>
+#include "qapi/error.h"
+
 #include "../tcg-ldst.c.inc"
 #include "../tcg-pool.c.inc"
 #include "qemu/bitops.h"
@@ -3071,6 +3074,17 @@ static void tcg_target_init(TCGContext *s)
     tcg_regset_set_reg(s->reserved_regs, TCG_REG_TMP1);
     tcg_regset_set_reg(s->reserved_regs, TCG_REG_TMP2);
     tcg_regset_set_reg(s->reserved_regs, TCG_VEC_TMP0);
+
+
+    if ((cpuinfo & CPUINFO_MTE)) {
+        // Enable MTE for shared memory tagging
+        if (prctl(PR_SET_TAGGED_ADDR_CTRL, PR_TAGGED_ADDR_ENABLE | PR_MTE_TCF_SYNC, 0, 0, 0))
+        {
+            error_setg_errno(&error_fatal, errno, "Enable MTE for shared memory tagging");
+        }
+        s->enable_pointer_tagging = true;
+    }
+
 }
 
 /* Saving pairs: (X19, X20) .. (X27, X28), (X29(fp), X30(lr)).  */
