@@ -16,6 +16,8 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
+#include "host/cpuinfo.h"
+
 #include "qemu/osdep.h"
 #include <sys/shm.h>
 #include "trace.h"
@@ -159,6 +161,9 @@ static int validate_prot_to_pageflags(int prot)
 static int target_to_host_prot(int prot)
 {
     return (prot & (PROT_READ | PROT_WRITE)) |
+#if defined(HOST_AARCH64)
+        ((cpuinfo & CPUINFO_MTE) ? PROT_MTE : 0)|
+#endif
            (prot & PROT_EXEC ? PROT_READ : 0);
 }
 
@@ -530,6 +535,15 @@ abi_long target_mmap(abi_ulong start, abi_ulong len, int target_prot,
      * be atomic with respect to an external process.
      */
     if (flags & MAP_SHARED) {
+#if defined(HOST_AARCH64)
+        if (cpuinfo & CPUINFO_MTE)
+        {
+            // Disallow because it is not supported with MTE
+            // TODO Figure out a solution
+            errno = ENOMEM;
+            goto fail;
+        }
+#endif
         CPUState *cpu = thread_cpu;
         if (!(cpu->tcg_cflags & CF_PARALLEL)) {
             cpu->tcg_cflags |= CF_PARALLEL;
@@ -608,12 +622,39 @@ abi_long target_mmap(abi_ulong start, abi_ulong len, int target_prot,
         /* update start so that it points to the file position at 'offset' */
         host_start = (uintptr_t)p;
         if (!(flags & MAP_ANONYMOUS)) {
-            p = mmap(g2h_untagged(start), len, host_prot,
-                     flags | MAP_FIXED, fd, host_offset);
-            if (p == MAP_FAILED) {
-                munmap(g2h_untagged(start), host_len);
-                goto fail;
+
+            // If using MTE, can't enable MTE on a non-anon page so fall back to copy
+#if defined(HOST_AARCH64)
+            if (cpuinfo & CPUINFO_MTE)
+            {
+                retaddr = target_mmap(start, len, target_prot | PROT_WRITE,
+                                      MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS,
+                                      -1, 0);
+                if (retaddr == -1)
+                {
+                    goto fail;
+                }
+                if (pread(fd, g2h_untagged(start), len, host_offset) == -1)
+                {
+                    goto fail;
+                }
+                if (!(target_prot & PROT_WRITE))
+                {
+                    ret = target_mprotect(start, len, target_prot);
+                    assert(ret == 0);
+                }
             }
+            else
+#endif
+            {
+                p = mmap(g2h_untagged(start), len, host_prot,
+                         flags | MAP_FIXED, fd, host_offset);
+                if (p == MAP_FAILED) {
+                    munmap(g2h_untagged(start), host_len);
+                    goto fail;
+                }
+            }
+
             host_start += offset - host_offset;
         }
         start = h2g(host_start);
@@ -663,9 +704,15 @@ abi_long target_mmap(abi_ulong start, abi_ulong len, int target_prot,
         /*
          * worst case: we cannot map the file because the offset is not
          * aligned, so we read it
+         * (Also in case of MTE)
          */
-        if (!(flags & MAP_ANONYMOUS) &&
-            (offset & ~qemu_host_page_mask) != (start & ~qemu_host_page_mask)) {
+        if (
+            !(flags & MAP_ANONYMOUS) && (
+#if  defined(HOST_AARCH64)
+             (cpuinfo & CPUINFO_MTE) ||
+#endif
+            (offset & ~qemu_host_page_mask) != (start & ~qemu_host_page_mask))
+            ) {
             /*
              * msync() won't work here, so we return an error if write is
              * possible while it is a shared mapping
