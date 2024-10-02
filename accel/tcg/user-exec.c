@@ -32,6 +32,7 @@
 #include "internal-common.h"
 #include "internal-target.h"
 #include "host/mte.h"
+#include "tcg/insn-start-words.h"
 
 __thread uintptr_t helper_retaddr;
 
@@ -962,6 +963,57 @@ void threadmem_dump(FILE* f)
     walk_threadmem_regions(f, dump_region_threadmem);
 }
 
+static gint g_direct_compare(gconstpointer v1, gconstpointer v2)
+{
+    return (v1 > v2) - (v1 < v2);
+}
+
+static GTree* threadmem_acceses_tree(void)
+{
+    static GTree* threadmem_tree;
+
+    if (!threadmem_tree)
+    {
+        threadmem_tree = g_tree_new(g_direct_compare);
+    }
+    return threadmem_tree;
+}
+
+static void threadmem_tree_update(uint64_t pc, uint64_t witness)
+{
+    GTree* threadmem_tree = threadmem_acceses_tree();
+    uintptr_t value = (uintptr_t)g_tree_lookup(threadmem_tree, (gpointer)pc);
+    if (!value)
+    {
+        g_tree_insert(threadmem_tree, (gpointer)pc, (gpointer)witness);
+    }
+}
+
+uintptr_t threadmem_tree_get(uint64_t pc)
+{
+    GTree* threadmem_tree = threadmem_acceses_tree();
+    uintptr_t value = (uintptr_t)g_tree_lookup(threadmem_tree, (gpointer)pc);
+    return value;
+}
+
+static gboolean dump_access(gpointer pc, gpointer shared, gpointer priv)
+{
+    FILE* f = (FILE*)priv;
+
+    fprintf(f, TARGET_FMT_lx" "TARGET_FMT_lx"\n", (uintptr_t)pc, (uintptr_t)shared);
+    return FALSE;
+}
+
+
+/* dump memory access */
+void threadmem_acceses_dump(FILE* f)
+{
+    const int length = sizeof(target_ulong) * 2;
+
+    fprintf(f, "%-*s %s\n", length, "pc", "witness");
+    g_tree_foreach(threadmem_acceses_tree(), dump_access, f);
+}
+
 bool handle_sigsegv_mteserr(CPUState* cpu, sigset_t* old_set, uintptr_t host_pc, void* address)
 {
     const uint8_t tag = extract64((target_ulong)address, 56, 4);
@@ -970,29 +1022,38 @@ bool handle_sigsegv_mteserr(CPUState* cpu, sigset_t* old_set, uintptr_t host_pc,
     {
         WITH_MMAP_LOCK_GUARD()
         {
-            target_ulong address1 = extract64((target_ulong)address, 0, 56);
-            threadmem_add_thread(address1, tag);
-            int prot = page_get_flags(address1) & PAGE_BITS;
-            if (!(prot & PAGE_WRITE))
+            uint64_t data[TARGET_INSN_START_WORDS];
+            if (cpu_unwind_state_data(cpu, host_pc, data))
             {
-                //Temporarily make the page writeable
-                if (mprotect((void*)QEMU_ALIGN_PTR_DOWN(address1, qemu_host_page_size), qemu_host_page_size,
-                             prot | PAGE_WRITE))
+                target_ulong address1 = extract64((target_ulong)address, 0, 56);
+                uint16_t bitmap = threadmem_add_thread(address1, tag);
+                uint64_t guest_pc = data[0];
+
+                uint64_t witness = bitmap == 1u << tag ? 0 : address1;
+                threadmem_tree_update(guest_pc, witness);
+
+                int prot = page_get_flags(address1) & PAGE_BITS;
+                if (!(prot & PAGE_WRITE))
                 {
-                    perror("mprotect: make writeable for MTE");
+                    //Temporarily make the page writeable
+                    if (mprotect((void*)QEMU_ALIGN_PTR_DOWN(address1, qemu_host_page_size), qemu_host_page_size,
+                                 prot | PAGE_WRITE))
+                    {
+                        perror("mprotect: make writeable for MTE");
+                    }
                 }
-            }
-            //Just perform the tag set for now
-            mte_set_tag(QEMU_ALIGN_PTR_DOWN(address, 16));
-            if (!(prot & PAGE_WRITE))
-            {
-                //Make page non-writeable again
-                if (mprotect((void*)QEMU_ALIGN_PTR_DOWN(address1, qemu_host_page_size), qemu_host_page_size, prot))
+                //Just perform the tag set for now
+                mte_set_tag(QEMU_ALIGN_PTR_DOWN(address, 16));
+                if (!(prot & PAGE_WRITE))
                 {
-                    perror("mprotect: reset writeable for MTE\n");
+                    //Make page non-writeable again
+                    if (mprotect((void*)QEMU_ALIGN_PTR_DOWN(address1, qemu_host_page_size), qemu_host_page_size, prot))
+                    {
+                        perror("mprotect: reset writeable for MTE\n");
+                    }
                 }
+                return true;
             }
-            return true;
         }
     }
     return false;

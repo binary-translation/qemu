@@ -207,6 +207,9 @@ extern const TargetPageBits target_page;
 
 #if defined(CONFIG_USER_ONLY)
 void threadmem_dump(FILE *f);
+void threadmem_acceses_dump(FILE *f);
+
+uintptr_t threadmem_tree_get(uint64_t pc);
 
 void page_dump(FILE *f);
 
