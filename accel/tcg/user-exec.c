@@ -771,6 +771,151 @@ int page_unprotect(target_ulong address, uintptr_t pc)
     return current_tb_invalidated ? 2 : 1;
 }
 
+typedef struct ThreadMemNode
+{
+    struct rcu_head rcu;
+    IntervalTreeNode itree;
+    uint16_t bitmap;
+} ThreadMemNode;
+
+static IntervalTreeRoot threadmem_root;
+
+static ThreadMemNode* threadmem_find(target_ulong start)
+{
+    IntervalTreeNode* n;
+
+    n = interval_tree_iter_first(&threadmem_root, start, start);
+    return n ? container_of(n, ThreadMemNode, itree) : NULL;
+}
+
+/* A subroutine of threadmem_add_thread: insert a new node for [start,last]. */
+static void threadmem_create(target_ulong start, target_ulong last, uint16_t bitmap)
+{
+    ThreadMemNode* p = g_new(ThreadMemNode, 1);
+
+    p->itree.start = start;
+    p->itree.last = last;
+    p->bitmap = bitmap;
+    interval_tree_insert(&p->itree, &threadmem_root);
+}
+
+/*
+ * A subroutine of threadmem_add_thread: nothing overlaps [start,start],
+ * but check adjacent mappings and maybe merge into a single range.
+ */
+static void threadmem_create_merge(target_ulong start, uint8_t thread)
+{
+    ThreadMemNode *next = NULL, *prev = NULL;
+
+    prev = threadmem_find(start - 16);
+    if (prev)
+    {
+        if (prev->bitmap & 1u << thread)
+        {
+            interval_tree_remove(&prev->itree, &threadmem_root);
+        }
+        else
+        {
+            prev = NULL;
+        }
+    }
+
+    next = threadmem_find(start + 16);
+    if (next)
+    {
+        if (next->bitmap & 1u << thread)
+        {
+            interval_tree_remove(&next->itree, &threadmem_root);
+        }
+        else
+        {
+            next = NULL;
+        }
+    }
+
+    if (prev)
+    {
+        if (next)
+        {
+            prev->itree.last = next->itree.last;
+            g_free_rcu(next, rcu);
+        }
+        else
+        {
+            prev->itree.last = start;
+        }
+        interval_tree_insert(&prev->itree, &threadmem_root);
+    }
+    else if (next)
+    {
+        next->itree.start = start;
+        interval_tree_insert(&next->itree, &threadmem_root);
+    }
+    else
+    {
+        threadmem_create(start, start, 1u << thread);
+    }
+}
+
+static uint16_t threadmem_add_thread(target_ulong granule, uint8_t thread)
+{
+    target_ulong start = ROUND_DOWN(granule, 16);
+
+    /* This function should never be called with addresses outside the
+       guest address space.  If this assert fires, it probably indicates
+       a missing call to h2g_valid.  */
+    assert(start <= GUEST_ADDR_MAX);
+    assert(have_mmap_lock());
+
+    target_ulong p_start;
+    target_ulong p_last;
+    ThreadMemNode* p = threadmem_find(start);
+    if (!p)
+    {
+        threadmem_create_merge(start, thread);
+        return 1u << thread;
+    }
+    p_start = p->itree.start;
+    p_last = p->itree.last;
+    uint16_t p_bitmap = p->bitmap;
+
+    /* Thread already owns memory in question */
+    if (p_bitmap & 1u << thread)
+    {
+        return p_bitmap;
+    }
+
+    /*
+     * If there is an exact range match, update and return without
+     * attempting to merge with adjacent regions.
+     */
+    if (start == p_start && start == p_last)
+    {
+        p->bitmap |= 1u << thread;
+        return p->bitmap;
+    }
+
+    /* Maybe split out head and/or tail ranges with the original bitmap. */
+    interval_tree_remove(&p->itree, &threadmem_root);
+    if (p_start < start)
+    {
+        p->itree.last = start - 16;
+        interval_tree_insert(&p->itree, &threadmem_root);
+
+        if (start < p_last)
+        {
+            threadmem_create(start + 16, p_last, p_bitmap);
+        }
+    }
+    else if (start < p_last)
+    {
+        p->itree.start = start + 16;
+        interval_tree_insert(&p->itree, &threadmem_root);
+    }
+    threadmem_create(start, start, p_bitmap | 1u << thread);
+    return p_bitmap | 1u << thread;
+}
+
 bool handle_sigsegv_mteserr(CPUState* cpu, sigset_t* old_set, uintptr_t host_pc, void* address)
 {
     const uint8_t tag = extract64((target_ulong)address, 56, 4);
@@ -780,6 +925,7 @@ bool handle_sigsegv_mteserr(CPUState* cpu, sigset_t* old_set, uintptr_t host_pc,
         WITH_MMAP_LOCK_GUARD()
         {
             target_ulong address1 = extract64((target_ulong)address, 0, 56);
+            threadmem_add_thread(address1, tag);
             int prot = page_get_flags(address1) & PAGE_BITS;
             if (!(prot & PAGE_WRITE))
             {
