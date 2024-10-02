@@ -630,6 +630,8 @@ MMUAccessType adjust_signal_pc(uintptr_t *pc, bool is_write);
 bool handle_sigsegv_accerr_write(CPUState *cpu, sigset_t *old_set,
                                  uintptr_t host_pc, abi_ptr guest_addr);
 
+bool handle_sigsegv_mteserr(CPUState* cpu, sigset_t *old_set, uintptr_t host_pc, void* address);
+
 /**
  * cpu_loop_exit_sigsegv:
  * @cpu: the cpu context

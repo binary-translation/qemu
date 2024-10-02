@@ -31,6 +31,7 @@
 #include "tcg/tcg-ldst.h"
 #include "internal-common.h"
 #include "internal-target.h"
+#include "host/mte.h"
 
 __thread uintptr_t helper_retaddr;
 
@@ -768,6 +769,41 @@ int page_unprotect(target_ulong address, uintptr_t pc)
 
     /* If current TB was invalidated return to main loop */
     return current_tb_invalidated ? 2 : 1;
+}
+
+bool handle_sigsegv_mteserr(CPUState* cpu, sigset_t* old_set, uintptr_t host_pc, void* address)
+{
+    const uint8_t tag = extract64((target_ulong)address, 56, 4);
+    // tag == 0 is a bug as we should never access guest memory untagged.
+    if (tag != 0)
+    {
+        WITH_MMAP_LOCK_GUARD()
+        {
+            target_ulong address1 = extract64((target_ulong)address, 0, 56);
+            int prot = page_get_flags(address1) & PAGE_BITS;
+            if (!(prot & PAGE_WRITE))
+            {
+                //Temporarily make the page writeable
+                if (mprotect((void*)QEMU_ALIGN_PTR_DOWN(address1, qemu_host_page_size), qemu_host_page_size,
+                             prot | PAGE_WRITE))
+                {
+                    perror("mprotect: make writeable for MTE");
+                }
+            }
+            //Just perform the tag set for now
+            mte_set_tag(QEMU_ALIGN_PTR_DOWN(address, 16));
+            if (!(prot & PAGE_WRITE))
+            {
+                //Make page non-writeable again
+                if (mprotect((void*)QEMU_ALIGN_PTR_DOWN(address1, qemu_host_page_size), qemu_host_page_size, prot))
+                {
+                    perror("mprotect: reset writeable for MTE\n");
+                }
+            }
+            return true;
+        }
+    }
+    return false;
 }
 
 static int probe_access_internal(CPUArchState *env, vaddr addr,

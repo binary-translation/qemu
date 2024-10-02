@@ -899,6 +899,12 @@ static void host_sigsegv_handler(CPUState *cpu, siginfo_t *info,
         return;
     }
 
+#if defined(HOST_AARCH64)
+    if (info->si_code == SEGV_MTESERR && handle_sigsegv_mteserr(cpu, host_signal_mask(uc), pc, info->si_addr))
+    {
+       return;
+    }
+#endif
     /*
      * If the access was not on behalf of the guest, within the executable
      * mapping of the generated code buffer, then it is a host bug.
