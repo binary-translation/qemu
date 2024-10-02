@@ -1092,6 +1092,7 @@ int cpu_exec(CPUState *cpu)
 
 bool tcg_exec_realizefn(CPUState *cpu, Error **errp)
 {
+    static uint64_t next_thread_tag = 1;
     static bool tcg_target_initialized;
     CPUClass *cc = CPU_GET_CLASS(cpu);
 
@@ -1104,6 +1105,16 @@ bool tcg_exec_realizefn(CPUState *cpu, Error **errp)
             thread_tag_id = tcg_global_mem_new_i64(tcg_env, offsetof(ArchCPU, parent_obj.neg.thread_tag_id) -
                 offsetof(ArchCPU, env), "thread_tag_id");
         }
+    }
+
+    if (tcg_ctx->enable_pointer_tagging) {
+        if (next_thread_tag == 15)
+        {
+            // 15 is reserved as shared
+            error_report("tcg_exec_realizefn: Too many threads.");
+            exit(1);
+        }
+        cpu->neg.thread_tag_id = next_thread_tag++;
 #endif
     }
 
