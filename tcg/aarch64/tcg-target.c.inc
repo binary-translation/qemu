@@ -12,6 +12,7 @@
 
 #include <sys/prctl.h>
 #include "qapi/error.h"
+#include "host/mte.h"
 
 #include "../tcg-ldst.c.inc"
 #include "../tcg-pool.c.inc"
@@ -607,6 +608,8 @@ typedef enum {
     BTI_C           = 0xd503245f,
     BTI_J           = 0xd503249f,
     BTI_JC          = 0xd50324df,
+
+    MSR_I           = 0xd500401f,
 } AArch64Insn;
 
 static inline uint32_t tcg_in32(TCGContext *s)
@@ -856,6 +859,16 @@ static void tcg_out_bti(TCGContext *s, AArch64Insn insn)
      */
     if (cpuinfo & CPUINFO_BTI) {
         tcg_out32(s, insn);
+    }
+}
+
+static void tcg_out_tco(TCGContext *s, bool enable)
+{
+    /*
+     * Don't emit MTE if it is not supported.
+     */
+    if (cpuinfo & CPUINFO_MTE) {
+        tcg_out32(s, MSR_I | 0b011 << 16 | 0b100 << 5 | enable << 8);
     }
 }
 
@@ -3083,6 +3096,7 @@ static void tcg_target_init(TCGContext *s)
             error_setg_errno(&error_fatal, errno, "Enable MTE for shared memory tagging");
         }
         s->enable_pointer_tagging = true;
+        disable_tag_check();
     }
 
 }
@@ -3109,6 +3123,7 @@ static void tcg_target_qemu_prologue(TCGContext *s)
 
     tcg_out_bti(s, BTI_C);
 
+    tcg_out_tco(s, false);
     /* Push (FP, LR) and allocate space for all saved registers.  */
     tcg_out_insn(s, 3314, STP, TCG_REG_FP, TCG_REG_LR,
                  TCG_REG_SP, -PUSH_SIZE, 1, 1);
@@ -3156,6 +3171,7 @@ static void tcg_target_qemu_prologue(TCGContext *s)
     tb_ret_addr = tcg_splitwx_to_rx(s->code_ptr);
     tcg_out_bti(s, BTI_J);
 
+    tcg_out_tco(s, true);
     /* Remove TCG locals stack space.  */
     tcg_out_insn(s, 3401, ADDI, TCG_TYPE_I64, TCG_REG_SP, TCG_REG_SP,
                  FRAME_SIZE - PUSH_SIZE);

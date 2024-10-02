@@ -9,4 +9,7 @@
 
 static inline void mte_set_tag(void* tagged_address) {}
 
+static inline void enable_tag_check(bool b) {}
+static inline void disable_tag_check(bool b) {}
+
 #endif //HOST_MTE_H
