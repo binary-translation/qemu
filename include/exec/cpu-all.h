@@ -206,6 +206,8 @@ extern const TargetPageBits target_page;
 #define PAGE_PASSTHROUGH 0x0800
 
 #if defined(CONFIG_USER_ONLY)
+void threadmem_dump(FILE *f);
+
 void page_dump(FILE *f);
 
 typedef int (*walk_memory_regions_fn)(void *, target_ulong,

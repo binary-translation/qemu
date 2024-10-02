@@ -916,6 +916,52 @@ static uint16_t threadmem_add_thread(target_ulong granule, uint8_t thread)
     return p_bitmap | 1u << thread;
 }
 
+typedef int (*walk_threadmem_regions_fn)(void*, target_ulong,
+                                         target_ulong, uint16_t);
+
+static int walk_threadmem_regions(void* priv, walk_threadmem_regions_fn fn)
+{
+    IntervalTreeNode* n;
+    int rc = 0;
+
+    mmap_lock();
+    for (n = interval_tree_iter_first(&threadmem_root, 0, -1);
+         n != NULL;
+         n = interval_tree_iter_next(n, 0, -1))
+    {
+        ThreadMemNode* p = container_of(n, ThreadMemNode, itree);
+
+        rc = fn(priv, n->start, n->last + 15, p->bitmap);
+        if (rc != 0)
+        {
+            break;
+        }
+    }
+    mmap_unlock();
+
+    return rc;
+}
+
+static int dump_region_threadmem(void* priv, target_ulong start,
+                                 target_ulong end, uint16_t bitmap)
+{
+    FILE* f = (FILE*)priv;
+
+    fprintf(f, TARGET_FMT_lx"-"TARGET_FMT_lx" "TARGET_FMT_lx" %016b\n",
+            start, end, end - start, bitmap);
+    return 0;
+}
+
+/* dump memory mappings */
+void threadmem_dump(FILE* f)
+{
+    const int length = sizeof(target_ulong) * 2;
+
+    fprintf(f, "%-*s %-*s %-*s %s\n",
+            length, "start", length, "end", length, "size", "bitmap");
+    walk_threadmem_regions(f, dump_region_threadmem);
+}
+
 bool handle_sigsegv_mteserr(CPUState* cpu, sigset_t* old_set, uintptr_t host_pc, void* address)
 {
     const uint8_t tag = extract64((target_ulong)address, 56, 4);

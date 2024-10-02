@@ -23,6 +23,8 @@
 #include "user-internals.h"
 #include "qemu/plugin.h"
 
+void signal_exit(void);
+
 #ifdef CONFIG_GCOV
 extern void __gcov_dump(void);
 #endif
@@ -35,4 +37,5 @@ void preexit_cleanup(CPUArchState *env, int code)
         gdb_exit(code);
         qemu_plugin_user_exit();
         perf_exit();
+        signal_exit();
 }

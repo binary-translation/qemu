@@ -875,6 +875,22 @@ void die_from_signal(siginfo_t *info)
     die_with_signal(info->si_signo);
 }
 
+
+static inline void log_unlock_guard (FILE** file)
+{
+    qemu_log_unlock(*file);
+}
+
+void signal_exit(void)
+{
+    if (qemu_loglevel_mask(CPU_LOG_THREAD_MEM))
+    {
+        FILE *f __attribute__((cleanup(log_unlock_guard))) = qemu_log_trylock();
+        threadmem_dump(f);
+        fputc('\n', f);
+    }
+}
+
 static void host_sigsegv_handler(CPUState *cpu, siginfo_t *info,
                                  host_sigcontext *uc)
 {
