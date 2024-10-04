@@ -32,16 +32,19 @@
 #include "tcg-internal.h"
 
 
+uintptr_t threadmem_tree_get(uint64_t pc);
+
 #ifdef TCG_TARGET_THREAD_TAG_ID
-#define POINTER_TAG_INSERT(tcg_ctx, addr)                               \
-    do {                                                                \
-        if ((tcg_ctx)->enable_pointer_tagging)                          \
-            {                                                           \
-                TCGv_i64 t = tcg_temp_ebb_new_i64();                    \
-                tcg_gen_deposit_i64(t, temp_tcgv_i64((addr)),           \
-                        thread_tag_id, 56, 4);                          \
-                (addr) = tcgv_i64_temp(t);                              \
-            }                                                           \
+#define POINTER_TAG_INSERT(tcg_ctx, addr)                                       \
+    do {                                                                        \
+        if ((tcg_ctx)->enable_pointer_tagging)                                  \
+            {                                                                   \
+                TCGv_i64 t = tcg_temp_ebb_new_i64();                            \
+                uintptr_t witness = threadmem_tree_get((tcg_ctx)->insn_pc);     \
+                tcg_gen_deposit_i64(t, temp_tcgv_i64((addr)),                   \
+                    witness ? tcg_constant_i64(15) : thread_tag_id, 56, 4);     \
+                (addr) = tcgv_i64_temp(t);                                      \
+            }                                                                   \
     } while(0)
 #else
 #define POINTER_TAG_INSERT(tcg_ctx, addr) do { } while (0)

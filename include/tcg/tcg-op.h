@@ -27,6 +27,7 @@ static inline void tcg_gen_insn_start(target_ulong pc)
 {
     TCGOp *op = tcg_emit_op(INDEX_op_insn_start, 64 / TCG_TARGET_REG_BITS);
     tcg_set_insn_start_param(op, 0, pc);
+    tcg_ctx->insn_pc = pc;
 }
 #elif TARGET_INSN_START_EXTRA_WORDS == 1
 static inline void tcg_gen_insn_start(target_ulong pc, target_ulong a1)
@@ -34,6 +35,7 @@ static inline void tcg_gen_insn_start(target_ulong pc, target_ulong a1)
     TCGOp *op = tcg_emit_op(INDEX_op_insn_start, 2 * 64 / TCG_TARGET_REG_BITS);
     tcg_set_insn_start_param(op, 0, pc);
     tcg_set_insn_start_param(op, 1, a1);
+    tcg_ctx->insn_pc = pc;
 }
 #elif TARGET_INSN_START_EXTRA_WORDS == 2
 static inline void tcg_gen_insn_start(target_ulong pc, target_ulong a1,
@@ -43,6 +45,7 @@ static inline void tcg_gen_insn_start(target_ulong pc, target_ulong a1,
     tcg_set_insn_start_param(op, 0, pc);
     tcg_set_insn_start_param(op, 1, a1);
     tcg_set_insn_start_param(op, 2, a2);
+    tcg_ctx->insn_pc = pc;
 }
 #else
 #error Unhandled TARGET_INSN_START_EXTRA_WORDS value
