@@ -1028,9 +1028,14 @@ bool handle_sigsegv_mteserr(CPUState* cpu, sigset_t* old_set, uintptr_t host_pc,
                 target_ulong address1 = extract64((target_ulong)address, 0, 56);
                 uint16_t bitmap = threadmem_add_thread(address1, tag);
                 uint64_t guest_pc = data[0];
+                uint64_t witness = 0;
 
-                uint64_t witness = bitmap == 1u << tag ? 0 : address1;
-                threadmem_tree_update(guest_pc, witness);
+                // Do not update status of a shared access
+                if (tag != 15)
+                {
+                    witness = bitmap == 1u << tag ? 0 : address1;
+                    threadmem_tree_update(guest_pc, witness);
+                }
 
                 int prot = page_get_flags(address1) & PAGE_BITS;
                 if (!(prot & PAGE_WRITE))
@@ -1042,7 +1047,12 @@ bool handle_sigsegv_mteserr(CPUState* cpu, sigset_t* old_set, uintptr_t host_pc,
                         perror("mprotect: make writeable for MTE");
                     }
                 }
-                //Just perform the tag set for now
+                if (witness)
+                {
+                    // Tag as shared
+                    address = (void*)deposit64((uintptr_t)address, 56, 4, 15);
+                    threadmem_add_thread(address1, 15); // Mark as shared address
+                }
                 mte_set_tag(QEMU_ALIGN_PTR_DOWN(address, 16));
                 if (!(prot & PAGE_WRITE))
                 {
@@ -1052,6 +1062,13 @@ bool handle_sigsegv_mteserr(CPUState* cpu, sigset_t* old_set, uintptr_t host_pc,
                         perror("mprotect: reset writeable for MTE\n");
                     }
                 }
+                if (witness)
+                {
+                    tb_invalidate_phys_insn_unwind(host_pc, guest_pc);
+                    sigprocmask(SIG_SETMASK, old_set, NULL);
+                    cpu_loop_exit_noexc(cpu);
+                }
+
                 return true;
             }
         }

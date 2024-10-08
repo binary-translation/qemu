@@ -1088,6 +1088,28 @@ bool tb_invalidate_phys_page_unwind(tb_page_addr_t addr, uintptr_t pc)
     }
     return false;
 }
+
+/*
+ * Called with mmap_lock held. Will invalidate all blocks that contain the given PC to regenerate them
+ * with potentially different tagging (shared), including the current TB, restoring the CPU state to prior this
+ * instruction. Requires calling the exit to cpu loop.
+ */
+void tb_invalidate_phys_insn_unwind(uintptr_t host_pc, uintptr_t guest_pc)
+{
+    TranslationBlock* current_tb;
+    TranslationBlock* tb;
+    PageForEachNext n;
+
+    assert_memory_lock();
+    current_tb = tcg_tb_lookup(host_pc);
+
+    cpu_restore_state_from_tb(current_cpu, current_tb, host_pc);
+
+    PAGE_FOR_EACH_TB(guest_pc, guest_pc, unused, tb, n)
+    {
+        tb_phys_invalidate__locked(tb);
+    }
+}
 #else
 /*
  * @p must be non-NULL.
