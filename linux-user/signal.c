@@ -569,6 +569,10 @@ static void signal_table_init(void)
     trace_signal_table_init(count);
 }
 
+#ifndef SA_EXPOSE_TAGBITS
+#define SA_EXPOSE_TAGBITS	0x00000800
+#endif
+
 void signal_init(void)
 {
     TaskState *ts = (TaskState *)thread_cpu->opaque;
@@ -605,6 +609,7 @@ void signal_init(void)
             sigaction(SIGABRT, NULL, &oact);
             sigaction(hsig, &act, NULL);
         } else {
+            act.sa_flags = SA_SIGINFO | (tsig == TARGET_SIGSEGV ? SA_EXPOSE_TAGBITS : 0);
             struct sigaction *iact = core_dump_signal(tsig) ? &act : NULL;
             sigaction(hsig, iact, &oact);
         }
