@@ -40,4 +40,13 @@ disable_tag_check(void) {
     }
 }
 
+static inline void mte_set_tag_range(uint64_t start, uint64_t end, uint8_t tag)
+{
+    // TODO Potentially use DC GVA to speed up
+    for (uint64_t addr = start; addr < end; addr += 16)
+    {
+        mte_set_tag((void*)deposit64(addr, 56,4,tag));
+    }
+}
+
 #endif //ARM_MTE_H

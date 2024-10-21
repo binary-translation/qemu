@@ -789,6 +789,24 @@ static ThreadMemNode* threadmem_find(target_ulong start)
     return n ? container_of(n, ThreadMemNode, itree) : NULL;
 }
 
+static ThreadMemNode* threadmem_find_range(target_ulong start, target_ulong last)
+{
+    IntervalTreeNode* n;
+
+    n = interval_tree_iter_first(&threadmem_root, start, last);
+    return n ? container_of(n, ThreadMemNode, itree) : NULL;
+}
+
+
+static ThreadMemNode *threadmem_next(ThreadMemNode *p, target_ulong start,
+                                     target_ulong last)
+{
+    IntervalTreeNode *n;
+
+    n = interval_tree_iter_next(&p->itree, start, last);
+    return n ? container_of(n, ThreadMemNode, itree) : NULL;
+}
+
 /* A subroutine of threadmem_add_thread: insert a new node for [start,last]. */
 static void threadmem_create(target_ulong start, target_ulong last, uint16_t bitmap)
 {
@@ -801,17 +819,17 @@ static void threadmem_create(target_ulong start, target_ulong last, uint16_t bit
 }
 
 /*
- * A subroutine of threadmem_add_thread: nothing overlaps [start,start],
+ * A subroutine of threadmem_add_thread: nothing overlaps [start,last],
  * but check adjacent mappings and maybe merge into a single range.
  */
-static void threadmem_create_merge(target_ulong start, uint8_t thread)
+static void threadmem_create_merge(target_ulong start, target_ulong last, uint8_t mask)
 {
     ThreadMemNode *next = NULL, *prev = NULL;
 
-    prev = threadmem_find(start - 16);
+    prev = threadmem_find_range(start - 16, start - 16);
     if (prev)
     {
-        if (prev->bitmap & 1u << thread)
+        if (prev->bitmap  == mask)
         {
             interval_tree_remove(&prev->itree, &threadmem_root);
         }
@@ -821,10 +839,10 @@ static void threadmem_create_merge(target_ulong start, uint8_t thread)
         }
     }
 
-    next = threadmem_find(start + 16);
+    next = threadmem_find_range(last + 16, last + 16);
     if (next)
     {
-        if (next->bitmap & 1u << thread)
+        if (next->bitmap == mask)
         {
             interval_tree_remove(&next->itree, &threadmem_root);
         }
@@ -843,7 +861,7 @@ static void threadmem_create_merge(target_ulong start, uint8_t thread)
         }
         else
         {
-            prev->itree.last = start;
+            prev->itree.last = last;
         }
         interval_tree_insert(&prev->itree, &threadmem_root);
     }
@@ -854,46 +872,63 @@ static void threadmem_create_merge(target_ulong start, uint8_t thread)
     }
     else
     {
-        threadmem_create(start, start, 1u << thread);
+        threadmem_create(start, last, mask);
     }
 }
 
-static uint16_t threadmem_add_thread(target_ulong granule, uint8_t thread)
+static uint16_t threadmem_insert(target_ulong start, target_ulong last, uint8_t mask)
 {
-    target_ulong start = ROUND_DOWN(granule, 16);
+    start = ROUND_DOWN(start, 16);
+    last = ROUND_DOWN(last, 16);
 
     /* This function should never be called with addresses outside the
        guest address space.  If this assert fires, it probably indicates
-       a missing call to h2g_valid.  */
-    assert(start <= GUEST_ADDR_MAX);
-    assert(have_mmap_lock());
+    a missing call to h2g_valid.  */
+    assert(start <= last);
+    assert(last <= GUEST_ADDR_MAX);
 
     target_ulong p_start;
     target_ulong p_last;
-    ThreadMemNode* p = threadmem_find(start);
+    ThreadMemNode* p;
+restart:
+    p = threadmem_find_range(start, last);
     if (!p)
     {
-        threadmem_create_merge(start, thread);
-        return 1u << thread;
+        threadmem_create_merge(start, last, mask); //TODO
+        return mask;
     }
     p_start = p->itree.start;
     p_last = p->itree.last;
     uint16_t p_bitmap = p->bitmap;
 
-    /* Thread already owns memory in question */
-    if (p_bitmap & 1u << thread)
-    {
-        return p_bitmap;
-    }
+    // /* Thread already owns memory in question */
+    // if ((p_bitmap & mask) == mask)
+    // {
+    //     return p_bitmap;
+    // }
 
     /*
      * If there is an exact range match, update and return without
      * attempting to merge with adjacent regions.
      */
-    if (start == p_start && start == p_last)
+    if (start == p_start && last == p_last)
     {
-        p->bitmap |= 1u << thread;
+        p->bitmap |= mask;
         return p->bitmap;
+    }
+
+    /* If bitmap is not changing for this range, incorporate it. */
+    if (mask == p_bitmap) {
+        if (start < p_start) {
+            interval_tree_remove(&p->itree, &pageflags_root);
+            p->itree.start = start;
+            interval_tree_insert(&p->itree, &pageflags_root);
+        }
+        if (p_last < last) {
+            start = p_last + 16;
+            goto restart;
+        }
+        return mask;
     }
 
     /* Maybe split out head and/or tail ranges with the original bitmap. */
@@ -901,20 +936,114 @@ static uint16_t threadmem_add_thread(target_ulong granule, uint8_t thread)
     if (p_start < start)
     {
         p->itree.last = start - 16;
-        interval_tree_insert(&p->itree, &threadmem_root);
+        interval_tree_insert(&p->itree, &threadmem_root); // original head
+        threadmem_create(start, p_last, p_bitmap); //remainder
+        goto restart;
+    }
+    if (last < p_last)
+    {
+        p->itree.start = last + 16;
+        interval_tree_insert(&p->itree, &threadmem_root); // original tail
+        threadmem_create(p_start, last, p_bitmap); //remainder
+        goto restart;
+    }
 
-        if (start < p_last)
+    if (start < p_start)
+    {
+        threadmem_create(start, p_start - 16, mask); // head
+    }
+    p->bitmap |= mask;
+    interval_tree_insert(&p->itree, &threadmem_root); // original
+    if (p_last < last)
+    {
+        threadmem_create(p_last+16, last, mask); // tail
+    }
+
+    return p_bitmap | mask;
+}
+
+static uint16_t threadmem_add_thread(target_ulong granule, uint8_t thread)
+{
+    return threadmem_insert(granule, granule, 1u << thread);
+}
+
+uint8_t memtag_get_range(target_ulong start, target_ulong len, uint8_t thread)
+{
+    target_ulong last;
+    int locked;  /* tri-state: =0: unlocked, +1: global, -1: local */
+    uint8_t ret;
+    uint16_t bitmap = 1;
+
+    if (len == 0) {
+        return 0;  /* trivial length */
+    }
+
+    last = start + len - 1;
+    assert(start <= last);
+
+    locked = have_mmap_lock();
+    {
+        ThreadMemNode *p = threadmem_find_range(start, last);
+        if (!p) {
+            if (!locked) {
+                /*
+                 * Lockless lookups have false negatives.
+                 * Retry with the lock held.
+                 */
+                mmap_lock();
+                locked = -1;
+                p = threadmem_find_range(start, last);
+            }
+            if (!p) {
+                /* entire region untagged */
+            }
+        }
+
+        for (; p; p = threadmem_next(p, start, last))
         {
-            threadmem_create(start + 16, p_last, p_bitmap);
+            bitmap |= p->bitmap;
+            if (ctpop16(bitmap) > 1) {
+                bitmap |= 1 << 15; /* mismatching tags => shared */
+                break;
+            }
         }
     }
-    else if (start < p_last)
+
+    ret = 15 - clz16(bitmap);
+
+    if (ret != 0)
     {
-        p->itree.start = start + 16;
-        interval_tree_insert(&p->itree, &threadmem_root);
+        if (!locked) {
+            /*
+             * Lockless lookups have false negatives.
+             * Retry with the lock held.
+             */
+            mmap_lock();
+            locked = -1;
+        }
+        //shared, retag whole range as shared, not sure if more efficient to do unconditionally or only needed parts
+        ThreadMemNode *p = threadmem_find_range(start, last);
+        assert(p);
+
+        for (uint64_t next_start = start; p; next_start = p->itree.last + 16, p = threadmem_next(p, start, last))
+        {
+            mte_set_tag_range(next_start, p->itree.start, ret);
+            if (!(p->bitmap & 1u << ret))
+            {
+                assert(ret == 15);
+                mte_set_tag_range(p->itree.start, MIN(p->itree.last, last) + 16, ret);
+            }
+        }
+
+        threadmem_insert(start, last, (1u << 15 | 1u << thread));
     }
-    threadmem_create(start, start, p_bitmap | 1u << thread);
-    return p_bitmap | 1u << thread;
+
+    /* Release the lock if acquired locally. */
+    if (locked < 0) {
+        mmap_unlock();
+    }
+
+    return ret;
 }
 
 typedef int (*walk_threadmem_regions_fn)(void*, target_ulong,
