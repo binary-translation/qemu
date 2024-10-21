@@ -144,6 +144,30 @@
 #include "fd-trans.h"
 #include "cpu_loop-common.h"
 
+#define g2h_tagged(cpu, gaddr, size)                                                               \
+        (void*)deposit64((target_ulong)(g2h((cpu), (gaddr))), 56, 4,                                      \
+            memtag_get_range((target_ulong)(g2h((cpu), (gaddr))), (size), (cpu)->neg.thread_tag_id))
+
+static inline void * lock_user_tagged(int type, abi_ulong guest_addr, ssize_t len, bool copy)
+{
+    void* host_ptr = lock_user(type, guest_addr, len, copy);
+    uint8_t tag = memtag_get_range((target_ulong)host_ptr, len, thread_cpu->neg.thread_tag_id);
+    return (void*)deposit64((target_ulong)host_ptr, 56, 4, tag);
+}
+
+#define lock_user lock_user_tagged
+
+static inline void *lock_user_string_tagged(abi_ulong guest_addr)
+{
+    ssize_t len = target_strlen(guest_addr);
+    if (len < 0) {
+        return NULL;
+    }
+    return lock_user(VERIFY_READ, guest_addr, len + 1, 1);
+}
+
+#define lock_user_string lock_user_string_tagged
+
 #ifndef CLONE_IO
 #define CLONE_IO                0x80000000      /* Clone io context */
 #endif
@@ -7765,7 +7789,7 @@ static int do_futex(CPUState *cpu, bool time64, target_ulong uaddr,
         break;
     case FUTEX_WAIT_REQUEUE_PI:
         val = tswap32(val);
-        haddr2 = g2h(cpu, uaddr2);
+        haddr2 = g2h_tagged(cpu, uaddr2, 4);
         break;
     case FUTEX_LOCK_PI:
     case FUTEX_LOCK_PI2:
@@ -7794,7 +7818,7 @@ static int do_futex(CPUState *cpu, bool time64, target_ulong uaddr,
           */
         pts = (struct timespec *)(uintptr_t)timeout;
         timeout = 0;
-        haddr2 = g2h(cpu, uaddr2);
+        haddr2 = g2h_tagged(cpu, uaddr2, 4);
         break;
     default:
         return -TARGET_ENOSYS;
@@ -7807,7 +7831,7 @@ static int do_futex(CPUState *cpu, bool time64, target_ulong uaddr,
             return -TARGET_EFAULT;
         }
     }
-    return do_safe_futex(g2h(cpu, uaddr), op, val, pts, haddr2, val3);
+    return do_safe_futex(g2h_tagged(cpu, uaddr, 4), op, val, pts, haddr2, val3);
 }
 #endif
 
@@ -9017,7 +9041,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
 
             if (ts->child_tidptr) {
                 put_user_u32(0, ts->child_tidptr);
-                do_sys_futex(g2h(cpu, ts->child_tidptr),
+                do_sys_futex(g2h_tagged(cpu, ts->child_tidptr, 4),
                              FUTEX_WAKE, INT_MAX, NULL, NULL, 0);
             }
 
