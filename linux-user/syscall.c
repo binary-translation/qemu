@@ -9376,6 +9376,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
             if (!arg5) {
                 ret = mount(p, p2, p3, (unsigned long)arg4, NULL);
             } else {
+                abort();
                 ret = mount(p, p2, p3, (unsigned long)arg4, g2h(cpu, arg5));
             }
             ret = get_errno(ret);
@@ -12230,6 +12231,7 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
             if (!a) {
                 return -TARGET_ENOMEM;
             }
+            abort();
             p = lock_user_string(arg3);
             if (!p) {
                 ret = -TARGET_EFAULT;
