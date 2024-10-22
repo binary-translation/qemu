@@ -1036,7 +1036,7 @@ uint8_t memtag_get_range(target_ulong start, target_ulong len, uint8_t thread)
             }
         }
 
-        for (uint64_t next_start = start; p; next_start = p->itree.last + 16, p = threadmem_next(p, start, last))
+        for (uint64_t next_start = QEMU_ALIGN_PTR_DOWN(start, 16); p; next_start = p->itree.last + 16, p = threadmem_next(p, start, last))
         {
             mte_set_tag_range(next_start, p->itree.start, ret);
             if (!(p->bitmap & 1u << ret))
