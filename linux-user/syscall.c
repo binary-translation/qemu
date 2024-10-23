@@ -146,12 +146,12 @@
 
 #define g2h_tagged(cpu, gaddr, size)                                                               \
         (void*)deposit64((target_ulong)(g2h((cpu), (gaddr))), 56, 4,                                      \
-            memtag_get_range((target_ulong)(g2h((cpu), (gaddr))), (size), (cpu)->neg.thread_tag_id))
+            memtag_share_range((target_ulong)(g2h((cpu), (gaddr))), (size), (cpu)->neg.thread_tag_id))
 
 static inline void * lock_user_tagged(int type, abi_ulong guest_addr, ssize_t len, bool copy)
 {
     void* host_ptr = lock_user(type, guest_addr, len, copy);
-    uint8_t tag = memtag_get_range((target_ulong)host_ptr, len, thread_cpu->neg.thread_tag_id);
+    uint8_t tag = memtag_share_range((target_ulong)host_ptr, len, thread_cpu->neg.thread_tag_id);
     return (void*)deposit64((target_ulong)host_ptr, 56, 4, tag);
 }
 

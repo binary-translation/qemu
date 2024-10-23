@@ -212,6 +212,7 @@ void threadmem_acceses_dump(FILE *f);
 uintptr_t threadmem_tree_get(uint64_t pc);
 
 uint8_t memtag_get_range(target_ulong start, target_ulong len, uint8_t thread);
+uint8_t memtag_share_range(target_ulong start, target_ulong len, uint8_t thread);
 
 void page_dump(FILE *f);
 

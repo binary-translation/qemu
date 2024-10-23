@@ -1066,6 +1066,74 @@ uint8_t memtag_get_range(target_ulong start, target_ulong len, uint8_t thread)
     return ret;
 }
 
+uint8_t memtag_share_range(target_ulong start, target_ulong len, uint8_t thread)
+{
+    target_ulong last;
+    int locked;  /* tri-state: =0: unlocked, +1: global, -1: local */
+    uint16_t bitmap = 1;
+
+    if (len == 0) {
+        return 0;  /* trivial length */
+    }
+
+    last = start + len - 1;
+    assert(start <= last);
+
+    locked = have_mmap_lock();
+
+    if (!locked) {
+        /*
+         * Lockless lookups have false negatives.
+         */
+        mmap_lock();
+        locked = -1;
+    }
+    //shared, retag whole range as shared, not sure if more efficient to do unconditionally or only needed parts
+    ThreadMemNode *p = threadmem_find_range(start, last);
+
+    //Assume full range has same flags
+    int prot = page_get_flags(start) & PAGE_BITS;
+    if (!(prot & PAGE_WRITE)) {
+        //Temporarily make the page(s) writeable
+        target_ulong i = QEMU_ALIGN_PTR_DOWN(start, qemu_host_page_size);
+
+        if (mprotect((void *) i, last - i, prot | PAGE_WRITE)) {
+            perror("mprotect: make writeable for MTE");
+        }
+    }
+
+    if (p) {
+        for (uint64_t next_start = QEMU_ALIGN_PTR_DOWN(start, 16); p;
+             next_start = p->itree.last + 16, p = threadmem_next(p, start, last)) {
+            mte_set_tag_range(next_start, p->itree.start, 15);
+            if (!(p->bitmap & 1u << 15)) {
+                assert(15 == 15);
+                mte_set_tag_range(p->itree.start, MIN(p->itree.last, last) + 16, 15);
+            }
+        }
+    } else {
+        mte_set_tag_range(QEMU_ALIGN_PTR_DOWN(start, 16), last + 16, 15);
+    }
+
+    if (!(prot & PAGE_WRITE)) {
+        //Make page(s) non-writeable again
+        target_ulong i = QEMU_ALIGN_PTR_DOWN(start, qemu_host_page_size);
+
+        if (mprotect((void *) i, last - i, prot)) {
+            perror("mprotect: make writeable for MTE");
+        }
+    }
+
+    threadmem_insert(start, last, (1u << 15 | 1u << thread));
+
+    /* Release the lock if acquired locally. */
+    if (locked < 0) {
+        mmap_unlock();
+    }
+
+    return 15;
+}
+
 typedef int (*walk_threadmem_regions_fn)(void*, target_ulong,
                                          target_ulong, uint16_t);
 
