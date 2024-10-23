@@ -876,7 +876,7 @@ static void threadmem_create_merge(target_ulong start, target_ulong last, uint8_
     }
 }
 
-static uint16_t threadmem_insert(target_ulong start, target_ulong last, uint8_t mask)
+static uint16_t threadmem_insert(target_ulong start, target_ulong last, uint16_t mask)
 {
     start = ROUND_DOWN(start, 16);
     last = ROUND_DOWN(last, 16);
