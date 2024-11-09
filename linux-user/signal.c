@@ -893,7 +893,7 @@ void signal_exit(void)
         FILE *f __attribute__((cleanup(log_unlock_guard))) = qemu_log_trylock();
         threadmem_dump(f);
         fputc('\n', f);
-        threadmem_acceses_dump(f);
+        threadmem_accesses_dump(f);
         fputc('\n', f);
     }
 }

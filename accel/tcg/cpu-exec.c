@@ -1125,6 +1125,7 @@ bool tcg_exec_realizefn(CPUState *cpu, Error **errp)
             error_report("tcg_exec_realizefn: Too many threads.");
             exit(1);
         }
+        fprintf(stderr, "New cpu thread id: %lu\n", next_thread_tag);
         cpu->neg.thread_tag_id = next_thread_tag++;
 #endif
     }

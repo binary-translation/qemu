@@ -1261,7 +1261,7 @@ static gboolean dump_access(gpointer pc, gpointer shared, gpointer priv)
 
 
 /* dump memory access */
-void threadmem_acceses_dump(FILE* f)
+void threadmem_accesses_dump(FILE* f)
 {
     struct access_stats stats = {f, 0, 0};
     const int length = sizeof(target_ulong) * 2;
