@@ -214,6 +214,12 @@ uintptr_t threadmem_tree_get(uint64_t pc);
 uint8_t memtag_get_range(target_ulong start, target_ulong len, uint8_t thread);
 uint8_t memtag_share_range(target_ulong start, target_ulong len, uint8_t thread);
 
+void add_exclusive_accesses(uint64_t num);
+void add_shared_accesses(uint64_t num);
+
+uint64_t get_exclusive_accesses(void);
+uint64_t get_shared_accesses(void);
+
 void page_dump(FILE *f);
 
 typedef int (*walk_memory_regions_fn)(void *, target_ulong,

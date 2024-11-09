@@ -43,6 +43,8 @@ uintptr_t threadmem_tree_get(uint64_t pc);
                 uintptr_t witness = threadmem_tree_get((tcg_ctx)->insn_pc);     \
                 tcg_gen_deposit_i64(t, temp_tcgv_i64((addr)),                   \
                     witness ? tcg_constant_i64(15) : thread_tag_id, 56, 4);     \
+                TCGv_i64 cntr = witness ? shared_accesses : exclusive_accesses; \
+                if (cntr) tcg_gen_addi_i64(cntr, cntr, 1);                      \
                 (addr) = tcgv_i64_temp(t);                                      \
             }                                                                   \
     } while(0)

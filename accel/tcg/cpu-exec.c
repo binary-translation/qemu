@@ -1109,6 +1109,13 @@ bool tcg_exec_realizefn(CPUState *cpu, Error **errp)
             thread_tag_id = tcg_global_mem_new_i64(tcg_env, offsetof(ArchCPU, parent_obj.neg.thread_tag_id) -
                 offsetof(ArchCPU, env), "thread_tag_id");
         }
+        if (qemu_loglevel_mask(CPU_LOG_ACCESSES))
+        {
+            shared_accesses = tcg_global_mem_new_i64(tcg_env, offsetof(ArchCPU, parent_obj.neg.shared_accesses) -
+                offsetof(ArchCPU, env), "shared_accesses");
+            exclusive_accesses = tcg_global_mem_new_i64(tcg_env, offsetof(ArchCPU, parent_obj.neg.exclusive_accesses) -
+                offsetof(ArchCPU, env), "exclusive_accesses");
+        }
     }
 
     if (tcg_ctx->enable_pointer_tagging) {

@@ -501,6 +501,8 @@ const QEMULogItem qemu_log_items[] = {
       "include VPU registers in the 'cpu' logging" },
     { CPU_LOG_THREAD_MEM, "thread_mem",
       "log memory region thread mapping on shutdown" },
+    { CPU_LOG_ACCESSES, "accesses",
+      "instrument memory accesses to record number of shared/exclusive accesses and print on program exit." },
     { 0, NULL, NULL },
 };
 

@@ -584,6 +584,8 @@ extern uintptr_t tcg_splitwx_diff;
 extern TCGv_env tcg_env;
 #ifdef TCG_TARGET_THREAD_TAG_ID
 extern TCGv_i64 thread_tag_id;
+extern TCGv_i64 shared_accesses;
+extern TCGv_i64 exclusive_accesses;
 #endif
 
 bool in_code_gen_buffer(const void *p);

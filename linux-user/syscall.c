@@ -9028,6 +9028,11 @@ _syscall5(int, sys_move_mount, int, __from_dfd, const char *, __from_pathname,
            int, __to_dfd, const char *, __to_pathname, unsigned int, flag)
 #endif
 
+static inline void log_unlock_guard (FILE** file)
+{
+    qemu_log_unlock(*file);
+}
+
 /* This is an internal helper for do_syscall so that it is easier
  * to have a single return point, so that actions, such as logging
  * of syscall results, can be performed.
@@ -9072,6 +9077,16 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
                 put_user_u32(0, ts->child_tidptr);
                 do_sys_futex(g2h_tagged(cpu, ts->child_tidptr, 4),
                              FUTEX_WAKE, INT_MAX, NULL, NULL, 0);
+            }
+
+            add_shared_accesses(cpu->neg.shared_accesses);
+            add_exclusive_accesses(cpu->neg.exclusive_accesses);
+
+            if (qemu_loglevel_mask(CPU_LOG_ACCESSES))
+            {
+                FILE* f __attribute__((cleanup(log_unlock_guard))) = qemu_log_trylock();
+                fprintf(f, "Thread exited with shared/exclusive accesses "TARGET_FMT_lu"/"TARGET_FMT_lu,
+                        cpu->neg.shared_accesses, cpu->neg.exclusive_accesses);
             }
 
             object_unparent(OBJECT(cpu));

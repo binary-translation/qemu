@@ -1160,24 +1160,46 @@ static int walk_threadmem_regions(void* priv, walk_threadmem_regions_fn fn)
     return rc;
 }
 
+struct region_stats
+{
+    FILE* f;
+    uint64_t sharedBytes;
+    uint64_t exclusiveBytes;
+};
+
 static int dump_region_threadmem(void* priv, target_ulong start,
                                  target_ulong end, uint16_t bitmap)
 {
-    FILE* f = (FILE*)priv;
+    struct region_stats* region_stats = priv;
+    FILE* f = region_stats->f;
+    end++; // End should be exclusive for pretty printing
+    uint64_t length = end - start;
+    if (ctpop16(bitmap) == 1)
+    {
+        region_stats->exclusiveBytes += length;
+    }
+    else
+    {
+        region_stats->sharedBytes += length;
+    }
 
     fprintf(f, TARGET_FMT_lx"-"TARGET_FMT_lx" "TARGET_FMT_lx" %016b\n",
-            start, end, end - start, bitmap);
+            start, end, length, bitmap);
     return 0;
 }
 
 /* dump memory mappings */
 void threadmem_dump(FILE* f)
 {
+    struct region_stats stats = {f, 0, 0};
     const int length = sizeof(target_ulong) * 2;
 
     fprintf(f, "%-*s %-*s %-*s %s\n",
             length, "start", length, "end", length, "size", "bitmap");
-    walk_threadmem_regions(f, dump_region_threadmem);
+    walk_threadmem_regions(&stats, dump_region_threadmem);
+    fprintf(f, "shared bytes: "TARGET_FMT_lu", exclusive bytes: "TARGET_FMT_lu" (%.2f bytes are shared)",
+            stats.sharedBytes, stats.exclusiveBytes,
+            100.0 * (double)stats.sharedBytes / (double)(stats.sharedBytes + stats.exclusiveBytes));
 }
 
 static gint g_direct_compare(gconstpointer v1, gconstpointer v2)
@@ -1213,9 +1235,25 @@ uintptr_t threadmem_tree_get(uint64_t pc)
     return value;
 }
 
+struct access_stats
+{
+    FILE* f;
+    uint64_t sharedAccesses;
+    uint64_t exclusiveAccesses;
+};
+
 static gboolean dump_access(gpointer pc, gpointer shared, gpointer priv)
 {
-    FILE* f = (FILE*)priv;
+    struct access_stats* access_stats = priv;
+    FILE* f = access_stats->f;
+    if (shared)
+    {
+        access_stats->sharedAccesses++;
+    }
+    else
+    {
+        access_stats->exclusiveAccesses++;
+    }
 
     fprintf(f, TARGET_FMT_lx" "TARGET_FMT_lx"\n", (uintptr_t)pc, (uintptr_t)shared);
     return FALSE;
@@ -1225,10 +1263,37 @@ static gboolean dump_access(gpointer pc, gpointer shared, gpointer priv)
 /* dump memory access */
 void threadmem_acceses_dump(FILE* f)
 {
+    struct access_stats stats = {f, 0, 0};
     const int length = sizeof(target_ulong) * 2;
 
     fprintf(f, "%-*s %s\n", length, "pc", "witness");
-    g_tree_foreach(threadmem_acceses_tree(), dump_access, f);
+    g_tree_foreach(threadmem_acceses_tree(), dump_access, &stats);
+    fprintf(f, "shared accesses: "TARGET_FMT_lu", exclusive accesses: "TARGET_FMT_lu" (%.2f accesses are shared)",
+            stats.sharedAccesses, stats.exclusiveAccesses,
+            100.0 * (double)stats.sharedAccesses / (double)(stats.sharedAccesses + stats.exclusiveAccesses));
+}
+
+uint64_t exclusive_accesses_total;
+uint64_t shared_accesses_total;
+
+void add_exclusive_accesses(uint64_t num)
+{
+    exclusive_accesses_total += num;
+}
+
+void add_shared_accesses(uint64_t num)
+{
+    shared_accesses_total += num;
+}
+
+uint64_t get_exclusive_accesses(void)
+{
+    return exclusive_accesses_total;
+}
+
+uint64_t get_shared_accesses(void)
+{
+    return shared_accesses_total;
 }
 
 bool handle_sigsegv_mteserr(CPUState* cpu, sigset_t* old_set, uintptr_t host_pc, void* address)

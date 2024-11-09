@@ -29,6 +29,11 @@ void signal_exit(void);
 extern void __gcov_dump(void);
 #endif
 
+static inline void log_unlock_guard (FILE** file)
+{
+    qemu_log_unlock(*file);
+}
+
 void preexit_cleanup(CPUArchState *env, int code)
 {
 #ifdef CONFIG_GCOV
@@ -38,4 +43,22 @@ void preexit_cleanup(CPUArchState *env, int code)
         qemu_plugin_user_exit();
         perf_exit();
         signal_exit();
+
+        CPUState* cpu;
+        CPU_FOREACH(cpu)
+        {
+            add_exclusive_accesses(cpu->neg.exclusive_accesses);
+            add_shared_accesses(cpu->neg.shared_accesses);
+        }
+
+        if (qemu_loglevel_mask(CPU_LOG_ACCESSES))
+        {
+            FILE *f __attribute__((cleanup(log_unlock_guard))) = qemu_log_trylock();
+            fprintf(
+                f, "Program exited with shared/exclusive accesses "TARGET_FMT_lu"/"TARGET_FMT_lu
+                " (%.2f shared accesses)",
+                get_shared_accesses(), get_exclusive_accesses(),
+                100.0 * (double)get_shared_accesses() / (double)(get_shared_accesses() + get_exclusive_accesses()));
+
+        }
 }

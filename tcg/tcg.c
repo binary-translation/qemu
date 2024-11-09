@@ -243,6 +243,8 @@ unsigned int tcg_max_ctxs;
 TCGv_env tcg_env;
 #ifdef TCG_TARGET_THREAD_TAG_ID
 TCGv_i64 thread_tag_id;
+TCGv_i64 shared_accesses;
+TCGv_i64 exclusive_accesses;
 #endif
 const void *tcg_code_gen_epilogue;
 uintptr_t tcg_splitwx_diff;
