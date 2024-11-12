@@ -1197,7 +1197,7 @@ void threadmem_dump(FILE* f)
     fprintf(f, "%-*s %-*s %-*s %s\n",
             length, "start", length, "end", length, "size", "bitmap");
     walk_threadmem_regions(&stats, dump_region_threadmem);
-    fprintf(f, "shared bytes: "TARGET_FMT_lu", exclusive bytes: "TARGET_FMT_lu" (%.2f bytes are shared)",
+    fprintf(f, "shared bytes: "TARGET_FMT_lu", exclusive bytes: "TARGET_FMT_lu" (%.2f%% bytes are shared)",
             stats.sharedBytes, stats.exclusiveBytes,
             100.0 * (double)stats.sharedBytes / (double)(stats.sharedBytes + stats.exclusiveBytes));
 }
@@ -1268,7 +1268,7 @@ void threadmem_accesses_dump(FILE* f)
 
     fprintf(f, "%-*s %s\n", length, "pc", "witness");
     g_tree_foreach(threadmem_acceses_tree(), dump_access, &stats);
-    fprintf(f, "shared accesses: "TARGET_FMT_lu", exclusive accesses: "TARGET_FMT_lu" (%.2f accesses are shared)",
+    fprintf(f, "shared accesses: "TARGET_FMT_lu", exclusive accesses: "TARGET_FMT_lu" (%.2f%% accesses are shared)",
             stats.sharedAccesses, stats.exclusiveAccesses,
             100.0 * (double)stats.sharedAccesses / (double)(stats.sharedAccesses + stats.exclusiveAccesses));
 }

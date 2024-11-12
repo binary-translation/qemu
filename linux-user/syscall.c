@@ -9085,8 +9085,8 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
             if (qemu_loglevel_mask(CPU_LOG_ACCESSES))
             {
                 FILE* f __attribute__((cleanup(log_unlock_guard))) = qemu_log_trylock();
-                fprintf(f, "Thread exited with shared/exclusive accesses "TARGET_FMT_lu"/"TARGET_FMT_lu,
-                        cpu->neg.shared_accesses, cpu->neg.exclusive_accesses);
+                fprintf(f, "Thread %lu exited with shared/exclusive accesses "TARGET_FMT_lu"/"TARGET_FMT_lu"\n",
+                        cpu->neg.thread_tag_id, cpu->neg.shared_accesses, cpu->neg.exclusive_accesses);
             }
 
             object_unparent(OBJECT(cpu));

@@ -49,6 +49,12 @@ void preexit_cleanup(CPUArchState *env, int code)
         {
             add_exclusive_accesses(cpu->neg.exclusive_accesses);
             add_shared_accesses(cpu->neg.shared_accesses);
+            if (qemu_loglevel_mask(CPU_LOG_ACCESSES))
+            {
+                FILE* f __attribute__((cleanup(log_unlock_guard))) = qemu_log_trylock();
+                fprintf(f, "Thread %lu exited with shared/exclusive accesses "TARGET_FMT_lu"/"TARGET_FMT_lu"\n",
+                        cpu->neg.thread_tag_id, cpu->neg.shared_accesses, cpu->neg.exclusive_accesses);
+            }
         }
 
         if (qemu_loglevel_mask(CPU_LOG_ACCESSES))
@@ -56,7 +62,7 @@ void preexit_cleanup(CPUArchState *env, int code)
             FILE *f __attribute__((cleanup(log_unlock_guard))) = qemu_log_trylock();
             fprintf(
                 f, "Program exited with shared/exclusive accesses "TARGET_FMT_lu"/"TARGET_FMT_lu
-                " (%.2f shared accesses)",
+                " (%.2f%% shared accesses)\n",
                 get_shared_accesses(), get_exclusive_accesses(),
                 100.0 * (double)get_shared_accesses() / (double)(get_shared_accesses() + get_exclusive_accesses()));
 
