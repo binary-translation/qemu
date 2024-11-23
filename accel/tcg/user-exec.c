@@ -822,7 +822,7 @@ static void threadmem_create(target_ulong start, target_ulong last, uint16_t bit
  * A subroutine of threadmem_add_thread: nothing overlaps [start,last],
  * but check adjacent mappings and maybe merge into a single range.
  */
-static void threadmem_create_merge(target_ulong start, target_ulong last, uint8_t mask)
+static void threadmem_create_merge(target_ulong start, target_ulong last, uint16_t mask)
 {
     ThreadMemNode *next = NULL, *prev = NULL;
 
