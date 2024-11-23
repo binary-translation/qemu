@@ -211,8 +211,9 @@ void threadmem_accesses_dump(FILE *f);
 
 uintptr_t threadmem_tree_get(uint64_t pc);
 
-uint8_t memtag_get_range(target_ulong start, target_ulong len, uint8_t thread);
-uint8_t memtag_share_range(target_ulong start, target_ulong len, uint8_t thread);
+void memtag_temp_share_lock(target_ulong start, target_ulong len);
+void memtag_temp_share_unlock(target_ulong start, target_ulong len);
+void memtag_share_range(target_ulong start, target_ulong len, uint8_t thread);
 
 void add_exclusive_accesses(uint64_t num);
 void add_shared_accesses(uint64_t num);

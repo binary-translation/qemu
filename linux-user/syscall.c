@@ -145,41 +145,52 @@
 #include "cpu_loop-common.h"
 
 #define g2h_tagged(cpu, gaddr, size)                                                               \
-        (void*)deposit64((target_ulong)(g2h((cpu), (gaddr))), 56, 4,                                      \
-            memtag_share_range((target_ulong)(g2h((cpu), (gaddr))), (size), (cpu)->neg.thread_tag_id))
+        (memtag_share_range((target_ulong)(g2h((cpu), (gaddr))), (size), (cpu)->neg.thread_tag_id),\
+        (void*)deposit64((target_ulong)(g2h((cpu), (gaddr))), 56, 4, 15))                          \
+
 
 #ifndef DEBUG_REMAP
 
+static gint g_direct_compare(gconstpointer v1, gconstpointer v2)
+{
+    return (v1 > v2) - (v1 < v2);
+}
+
+static GTree* temp_share_tree(void)
+{
+    static GTree* temp_share_tree;
+
+    if (!temp_share_tree)
+    {
+        temp_share_tree = g_tree_new(g_direct_compare);
+    }
+    return temp_share_tree;
+}
+
 static inline void unlock_user_tagged(void *host_ptr, abi_ulong guest_addr, ssize_t len)
 {
-    void *host_ptr_conv;
     //fprintf(stderr, "UnLock:%016lx of %016lx\n", guest_addr, (uintptr_t) host_ptr);
     if (!host_ptr) {
         return;
     }
-    host_ptr_conv = g2h(thread_cpu, guest_addr);
-    if (host_ptr == host_ptr_conv) {
-        return;
+    ssize_t len1 = (ssize_t) g_tree_lookup(temp_share_tree(), (gpointer)guest_addr);
+
+    if (len && len1 != len)
+    {
+        fprintf(stderr, "Size mismatch\n");
     }
-    if (len > 0) {
-        memcpy(host_ptr_conv, host_ptr, len);
-    }
-    g_free(host_ptr);
+    memtag_temp_share_unlock((target_ulong)host_ptr, len1);
 }
 
 
 static inline void * lock_user_tagged(int type, abi_ulong guest_addr, ssize_t len, bool copy)
 {
     void* host_ptr = lock_user(type, guest_addr, len, copy);
-    //uint8_t tag = memtag_share_range((target_ulong)host_ptr, len, thread_cpu->neg.thread_tag_id);
-    if (copy) {
-        host_ptr = g_memdup(host_ptr, len);
-    } else {
-        host_ptr = g_malloc0(len);
-    }
+    // uint64_t thread_tag_id = thread_cpu->neg.thread_tag_id;
+    memtag_temp_share_lock((target_ulong)host_ptr, len);
+    g_tree_insert(temp_share_tree(), (gpointer)guest_addr, (gpointer)len);
     //fprintf(stderr, "Lock  :%016lx to %016lx\n", guest_addr, (uintptr_t) host_ptr);
-    return host_ptr;
-    //return (void*)deposit64((target_ulong)host_ptr, 56, 4, tag);
+    return (void*)deposit64((target_ulong)host_ptr, 56, 4, 15);
 }
 
 #define lock_user lock_user_tagged
