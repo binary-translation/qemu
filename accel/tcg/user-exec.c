@@ -970,10 +970,11 @@ static uint16_t threadmem_add_thread(target_ulong granule, uint8_t thread)
 void memtag_temp_share_lock(target_ulong start, target_ulong len)
 {
     target_ulong last;
-    int locked;  /* tri-state: =0: unlocked, +1: global, -1: local */
+    int locked; /* tri-state: =0: unlocked, +1: global, -1: local */
 
-    if (len == 0) {
-        return;  /* trivial length */
+    if (len == 0)
+    {
+        return; /* trivial length */
     }
 
     last = start + len - 1;
@@ -981,7 +982,8 @@ void memtag_temp_share_lock(target_ulong start, target_ulong len)
 
     locked = have_mmap_lock();
 
-    if (!locked) {
+    if (!locked)
+    {
         /*
          * Lockless lookups have false negatives.
          * Retry with the lock held.
@@ -990,38 +992,45 @@ void memtag_temp_share_lock(target_ulong start, target_ulong len)
         locked = -1;
     }
     //mark temporarily shared, retag whole range as shared, not sure if more efficient to do unconditionally or only needed parts
-    ThreadMemNode *p = threadmem_find_range(start, last);
+    ThreadMemNode* p = threadmem_find_range(start, last);
     assert(p);
 
     //Assume full range has same flags
     int prot = page_get_flags(start) & PAGE_BITS;
-    if (!(prot & PAGE_WRITE)) {
+    if (!(prot & PAGE_WRITE))
+    {
         //Temporarily make the page(s) writeable
         target_ulong i = QEMU_ALIGN_PTR_DOWN(start, qemu_host_page_size);
 
-        if (mprotect((void *) i, last - i, prot | PAGE_WRITE)) {
+        if (mprotect((void*)i, last - i, prot | PAGE_WRITE))
+        {
             perror("mprotect: make writeable for MTE");
         }
     }
 
-    for (uint64_t next_start = QEMU_ALIGN_PTR_DOWN(start, 16); p; next_start = p->itree.last + 16, p = threadmem_next(p, start, last))
+    for (uint64_t next_start = QEMU_ALIGN_PTR_DOWN(start, 16); p; next_start = p->itree.last + 16, p =
+         threadmem_next(p, start, last))
     {
         mte_set_tag_range(next_start, p->itree.start, 15);
-        if(p->bitmap & 1u) {
+        if (p->bitmap & 1u)
+        {
             // Temporarily shared by syscall in different thead
             // Mark as permanently shared
             threadmem_insert(p->itree.start, MIN(p->itree.last, last) + 16, 1u << 15);
-        } else if (!(p->bitmap & 1u << 15))
+        }
+        else if (!(p->bitmap & 1u << 15))
         {
             mte_set_tag_range(p->itree.start, MIN(p->itree.last, last) + 16, 15);
         }
     }
 
-    if (!(prot & PAGE_WRITE)) {
+    if (!(prot & PAGE_WRITE))
+    {
         //Make page(s) non-writeable again
         target_ulong i = QEMU_ALIGN_PTR_DOWN(start, qemu_host_page_size);
 
-        if (mprotect((void *) i, last - i, prot)) {
+        if (mprotect((void*)i, last - i, prot))
+        {
             perror("mprotect: make writeable for MTE");
         }
     }
@@ -1029,7 +1038,8 @@ void memtag_temp_share_lock(target_ulong start, target_ulong len)
     threadmem_insert(start, last, 1u);
 
     /* Release the lock if acquired locally. */
-    if (locked < 0) {
+    if (locked < 0)
+    {
         mmap_unlock();
     }
 }
@@ -1037,10 +1047,11 @@ void memtag_temp_share_lock(target_ulong start, target_ulong len)
 void memtag_temp_share_unlock(target_ulong start, target_ulong len)
 {
     target_ulong last;
-    int locked;  /* tri-state: =0: unlocked, +1: global, -1: local */
+    int locked; /* tri-state: =0: unlocked, +1: global, -1: local */
 
-    if (len == 0) {
-        return;  /* trivial length */
+    if (len == 0)
+    {
+        return; /* trivial length */
     }
 
     last = start + len - 1;
@@ -1048,7 +1059,8 @@ void memtag_temp_share_unlock(target_ulong start, target_ulong len)
 
     locked = have_mmap_lock();
 
-    if (!locked) {
+    if (!locked)
+    {
         /*
          * Lockless lookups have false negatives.
          * Retry with the lock held.
@@ -1057,26 +1069,28 @@ void memtag_temp_share_unlock(target_ulong start, target_ulong len)
         locked = -1;
     }
     //unmark parts as shared which are still exclusive
-    ThreadMemNode *p = threadmem_find_range(start, last);
+    ThreadMemNode* p = threadmem_find_range(start, last);
     assert(p);
 
     //Assume full range has same flags
     int prot = page_get_flags(start) & PAGE_BITS;
-    if (!(prot & PAGE_WRITE)) {
+    if (!(prot & PAGE_WRITE))
+    {
         //Temporarily make the page(s) writeable
         target_ulong i = QEMU_ALIGN_PTR_DOWN(start, qemu_host_page_size);
 
-        if (mprotect((void *) i, last - i, prot | PAGE_WRITE)) {
+        if (mprotect((void*)i, last - i, prot | PAGE_WRITE))
+        {
             perror("mprotect: make writeable for MTE");
         }
     }
 
-    for (;p; p = threadmem_next(p, start, last))
+    for (; p; p = threadmem_next(p, start, last))
     {
         assert(p->bitmap & 1u);
         if (!(p->bitmap & 1u << 15))
         {
-            p->bitmap&=~1u;
+            p->bitmap &= ~1u;
             uint16_t tag = ctz16(p->bitmap);
             if (p->bitmap == 0)
             {
@@ -1088,17 +1102,20 @@ void memtag_temp_share_unlock(target_ulong start, target_ulong len)
         }
     }
 
-    if (!(prot & PAGE_WRITE)) {
+    if (!(prot & PAGE_WRITE))
+    {
         //Make page(s) non-writeable again
         target_ulong i = QEMU_ALIGN_PTR_DOWN(start, qemu_host_page_size);
 
-        if (mprotect((void *) i, last - i, prot)) {
+        if (mprotect((void*)i, last - i, prot))
+        {
             perror("mprotect: make writeable for MTE");
         }
     }
 
     /* Release the lock if acquired locally. */
-    if (locked < 0) {
+    if (locked < 0)
+    {
         mmap_unlock();
     }
 }
