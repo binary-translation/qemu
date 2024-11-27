@@ -777,6 +777,7 @@ typedef struct ThreadMemNode
     struct rcu_head rcu;
     IntervalTreeNode itree;
     uint16_t bitmap;
+    bool second_chance;
 } ThreadMemNode;
 
 static IntervalTreeRoot threadmem_root;
@@ -815,6 +816,7 @@ static void threadmem_create(target_ulong start, target_ulong last, uint16_t bit
     p->itree.start = start;
     p->itree.last = last;
     p->bitmap = bitmap;
+    p->second_chance = false;
     interval_tree_insert(&p->itree, &threadmem_root);
 }
 
@@ -829,7 +831,7 @@ static void threadmem_create_merge(target_ulong start, target_ulong last, uint16
     prev = threadmem_find_range(start - 16, start - 16);
     if (prev)
     {
-        if (prev->bitmap  == mask)
+        if (prev->bitmap  == mask && !prev->second_chance)
         {
             interval_tree_remove(&prev->itree, &threadmem_root);
         }
@@ -842,7 +844,7 @@ static void threadmem_create_merge(target_ulong start, target_ulong last, uint16
     next = threadmem_find_range(last + 16, last + 16);
     if (next)
     {
-        if (next->bitmap == mask)
+        if (next->bitmap == mask && !next->second_chance)
         {
             interval_tree_remove(&next->itree, &threadmem_root);
         }
@@ -876,7 +878,7 @@ static void threadmem_create_merge(target_ulong start, target_ulong last, uint16
     }
 }
 
-static uint16_t threadmem_insert(target_ulong start, target_ulong last, uint16_t mask)
+static uint16_t threadmem_insert(target_ulong start, target_ulong last, uint16_t mask, bool second_chance)
 {
     start = ROUND_DOWN(start, 16);
     last = ROUND_DOWN(last, 16);
@@ -913,6 +915,12 @@ restart:
      */
     if (start == p_start && last == p_last)
     {
+        if (second_chance && !p->second_chance) {
+            // Clear all but SHARED and TEMP_SHARED bits
+            p->bitmap &= (1u << 15) | 1;
+            // Use up second chance if it does not remain tagged
+            p->second_chance = p->bitmap == 0;
+        }
         p->bitmap |= mask;
         return p->bitmap;
     }
@@ -952,7 +960,16 @@ restart:
     {
         threadmem_create(start, p_start - 16, mask); // head
     }
+
+    if (second_chance && !p->second_chance) {
+        // Clear all but SHARED and TEMP_SHARED bits
+        p->bitmap &= (1u << 15) | 1;
+        // Use up second chance if it does not remain tagged
+        p->second_chance = p->bitmap == 0;
+    }
+
     p->bitmap |= mask;
+
     interval_tree_insert(&p->itree, &threadmem_root); // original
     if (p_last < last)
     {
@@ -962,9 +979,9 @@ restart:
     return p_bitmap | mask;
 }
 
-static uint16_t threadmem_add_thread(target_ulong granule, uint8_t thread)
+static uint16_t threadmem_add_thread(target_ulong granule, uint8_t thread, bool second_chance)
 {
-    return threadmem_insert(granule, granule, 1u << thread);
+    return threadmem_insert(granule, granule, 1u << thread, second_chance);
 }
 
 void memtag_temp_share_lock(target_ulong start, target_ulong len)
@@ -1018,7 +1035,7 @@ void memtag_temp_share_lock(target_ulong start, target_ulong len)
             {
                 // Temporarily shared by syscall in different thead
                 // Mark as permanently shared
-                threadmem_insert(p->itree.start, MIN(p->itree.last, last) + 16, 1u << 15);
+                threadmem_insert(p->itree.start, MIN(p->itree.last, last) + 16, 1u << 15, false);
             }
             else if (!(p->bitmap & 1u << 15))
             {
@@ -1038,7 +1055,7 @@ void memtag_temp_share_lock(target_ulong start, target_ulong len)
         }
     }
 
-    threadmem_insert(start, last, 1u);
+    threadmem_insert(start, last, 1u, false);
 
     /* Release the lock if acquired locally. */
     if (locked < 0)
@@ -1088,6 +1105,7 @@ void memtag_temp_share_unlock(target_ulong start, target_ulong len)
         }
     }
 
+    //FIXME overlap into adjacent chunks is cleared as well?
     for (; p; p = threadmem_next(p, start, last))
     {
         assert(p->bitmap & 1u);
@@ -1180,7 +1198,7 @@ void memtag_share_range(target_ulong start, target_ulong len, uint8_t thread)
         }
     }
 
-    threadmem_insert(start, last, (1u << 15 | 1u << thread));
+    threadmem_insert(start, last, (1u << 15 | 1u << thread), false);
 
     /* Release the lock if acquired locally. */
     if (locked < 0) {
@@ -1362,7 +1380,7 @@ bool handle_sigsegv_mteserr(CPUState* cpu, sigset_t* old_set, uintptr_t host_pc,
             if (cpu_unwind_state_data(cpu, host_pc, data))
             {
                 target_ulong address1 = extract64((target_ulong)address, 0, 56);
-                uint16_t bitmap = threadmem_add_thread(address1, tag);
+                uint16_t bitmap = threadmem_add_thread(address1, tag, true);
                 uint64_t guest_pc = data[0];
                 uint64_t witness = 0;
 
@@ -1387,7 +1405,7 @@ bool handle_sigsegv_mteserr(CPUState* cpu, sigset_t* old_set, uintptr_t host_pc,
                 {
                     // Tag as shared
                     address = (void*)deposit64((uintptr_t)address, 56, 4, 15);
-                    threadmem_add_thread(address1, 15); // Mark as shared address
+                    threadmem_add_thread(address1, 15, false); // Mark as shared address
                 }
                 mte_set_tag(QEMU_ALIGN_PTR_DOWN(address, 16));
                 if (!(prot & PAGE_WRITE))
