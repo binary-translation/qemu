@@ -994,6 +994,7 @@ void memtag_temp_share_lock(target_ulong start, target_ulong len)
         return; /* trivial length */
     }
 
+    start = QEMU_ALIGN_DOWN(start, 16);
     last = start + len - 1;
     assert(start <= last);
 
@@ -1027,7 +1028,7 @@ void memtag_temp_share_lock(target_ulong start, target_ulong len)
             }
         }
 
-        for (uint64_t next_start = QEMU_ALIGN_PTR_DOWN(start, 16); p; next_start = p->itree.last + 16, p =
+        for (uint64_t next_start = start; p; next_start = p->itree.last + 16, p =
              threadmem_next(p, start, last))
         {
             mte_set_tag_range(next_start, p->itree.start, 15);
