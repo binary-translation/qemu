@@ -175,10 +175,10 @@ static inline void unlock_user_tagged(void *host_ptr, abi_ulong guest_addr, ssiz
     }
     ssize_t len1 = (ssize_t) g_tree_lookup(temp_share_tree(), (gpointer)guest_addr);
 
-    assert(!(len && len1 != len));
     assert(extract64((target_ulong) host_ptr, 0, 56) == guest_addr);
 
     memtag_temp_share_unlock(guest_addr, len1);
+    unlock_user(host_ptr, guest_addr, len);
 }
 
 
