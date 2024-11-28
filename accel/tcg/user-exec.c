@@ -1012,22 +1012,22 @@ void memtag_temp_share_lock(target_ulong start, target_ulong len)
     //mark temporarily shared, retag whole range as shared, not sure if more efficient to do unconditionally or only needed parts
     ThreadMemNode* p = threadmem_find_range(start, last);
 
+    //Assume full range has same flags
+    int prot = page_get_flags(start) & PAGE_BITS;
+    if (!(prot & PAGE_WRITE))
+    {
+        //Temporarily make the page(s) writeable
+        target_ulong i = QEMU_ALIGN_PTR_DOWN(start, qemu_host_page_size);
+
+        if (mprotect((void*)i, last - i, prot | PAGE_WRITE))
+        {
+            perror("mprotect: make writeable for MTE");
+        }
+    }
+
     if (!p) {
         mte_set_tag_range(start, last + 16, 15);
     } else {
-        //Assume full range has same flags
-        int prot = page_get_flags(start) & PAGE_BITS;
-        if (!(prot & PAGE_WRITE))
-        {
-            //Temporarily make the page(s) writeable
-            target_ulong i = QEMU_ALIGN_PTR_DOWN(start, qemu_host_page_size);
-
-            if (mprotect((void*)i, last - i, prot | PAGE_WRITE))
-            {
-                perror("mprotect: make writeable for MTE");
-            }
-        }
-
         for (uint64_t next_start = start; p; next_start = p->itree.last + 16, p =
              threadmem_next(p, start, last))
         {
@@ -1043,16 +1043,16 @@ void memtag_temp_share_lock(target_ulong start, target_ulong len)
                 mte_set_tag_range(p->itree.start, MIN(p->itree.last, last) + 16, 15);
             }
         }
+    }
 
-        if (!(prot & PAGE_WRITE))
+    if (!(prot & PAGE_WRITE))
+    {
+        //Make page(s) non-writeable again
+        target_ulong i = QEMU_ALIGN_PTR_DOWN(start, qemu_host_page_size);
+
+        if (mprotect((void*)i, last - i, prot))
         {
-            //Make page(s) non-writeable again
-            target_ulong i = QEMU_ALIGN_PTR_DOWN(start, qemu_host_page_size);
-
-            if (mprotect((void*)i, last - i, prot))
-            {
-                perror("mprotect: make writeable for MTE");
-            }
+            perror("mprotect: make writeable for MTE");
         }
     }
 
